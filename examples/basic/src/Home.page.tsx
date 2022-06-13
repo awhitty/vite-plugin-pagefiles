@@ -1,16 +1,18 @@
-import './App.css'
+import { Link } from "react-router-dom";
 
-function makePath() {
-  return '/abc'
-}
+import { PagefileMeta } from "./types";
 
-global.foo = 'bar';
-
-export const meta = {
-  path: makePath(),
-  // jsx: <div>Howdy</div>
-}
+export const meta: PagefileMeta = {
+  path: "/",
+  key: ["home"],
+};
 
 export default function Home() {
-  return <div>Howdy!</div>
+  return (
+    <div>
+      <h1>Home</h1>
+      <p>Welcome to the homepage</p>
+      <Link to="/about">Go to about page</Link>
+    </div>
+  );
 }

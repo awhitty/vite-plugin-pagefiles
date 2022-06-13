@@ -23,6 +23,7 @@
   "license": "ISC",
   "devDependencies": {
     "@types/node": "^17.0.40",
+    "@types/picomatch": "^2.3.0",
     "@typescript-eslint/eslint-plugin": "^5.21.0",
     "@typescript-eslint/parser": "^5.21.0",
     "eslint": "^8.14.0",
@@ -42,6 +43,7 @@
     "@antfu/utils": "^0.5.2",
     "esbuild": "^0.14.42",
     "fast-glob": "^3.2.11",
+    "picomatch": "^2.3.1",
     "realms-polyfill": "^0.7.3"
   }
 }
