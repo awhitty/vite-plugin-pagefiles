@@ -4,7 +4,6 @@ const baseRules = {
   "simple-import-sort/exports": "error",
   "no-undef": "off",
   "arrow-body-style": ["error", "as-needed"],
-  "react/prop-types": "off",
 };
 
 const rulesTypeScript = {
@@ -13,8 +12,28 @@ const rulesTypeScript = {
 
 const rulesJavaScript = { ...baseRules };
 
+const ignorePatterns = [
+  "*.min.*",
+  "CHANGELOG.md",
+  "dist",
+  "LICENSE*",
+  "output",
+  "coverage",
+  "public",
+  "temp",
+  "packages-lock.json",
+  "pnpm-lock.yaml",
+  "yarn.lock",
+  "__snapshots__",
+  "!.github",
+  "!.vitepress",
+  "!.vscode",
+  "examples",
+];
+
 module.exports = {
   root: true,
+  ignorePatterns,
   overrides: [
     {
       files: ["*.ts", "*.tsx"],
@@ -39,23 +58,9 @@ module.exports = {
   extends: [
     "eslint:recommended",
     "plugin:@typescript-eslint/recommended",
-    "plugin:react/recommended",
-    "plugin:react/jsx-runtime",
-    "plugin:react-hooks/recommended",
     "plugin:jsx-a11y/recommended",
     "prettier",
   ],
   rules: rulesJavaScript,
-  plugins: [
-    "@typescript-eslint",
-    "react",
-    "jsx-a11y",
-    "prettier",
-    "simple-import-sort",
-  ],
-  settings: {
-    react: {
-      version: "detect",
-    },
-  },
+  plugins: ["@typescript-eslint", "jsx-a11y", "prettier", "simple-import-sort"],
 };

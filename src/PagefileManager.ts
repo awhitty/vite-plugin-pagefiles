@@ -1,18 +1,18 @@
-import {slash, toArray} from "@antfu/utils";
+import { slash, toArray } from "@antfu/utils";
 import fg from "fast-glob";
 import picomatch from "picomatch";
-import {FSWatcher, ModuleNode, ResolvedConfig, ViteDevServer} from "vite";
+import { FSWatcher, ModuleNode, ResolvedConfig, ViteDevServer } from "vite";
 
-import {extractPagefileData} from "./extractPagefileData";
-import {generateRoutesFile} from "./generateRoutesFile";
-import {isDefined} from "./isDefined";
+import { extractPagefileData } from "./extractPagefileData";
+import { generateRoutesFile } from "./generateRoutesFile";
+import { isDefined } from "./isDefined";
 import {
   isValidPagefile,
   RawPagefileData,
-  validatePagefile
+  validatePagefile,
 } from "./isValidPagefile";
-import {resolveOptions} from "./resolveOptions";
-import {ResolvedOptions, UserOptions} from "./types";
+import { resolveOptions } from "./resolveOptions";
+import { ResolvedOptions, UserOptions } from "./types";
 
 export class PagefileManager {
   private server: ViteDevServer | undefined;

@@ -1,7 +1,21 @@
 {
   "name": "vite-plugin-pagefiles",
   "version": "0.1.0",
-  "description": "",
+  "packageManager": "pnpm@7.2.1",
+  "description": "Vite plugin to statically extract metadata from components files and generate client-side route declarations",
+  "keywords": [
+    "vite",
+    "react",
+    "pagefiles"
+  ],
+  "author": "Austin Whittier <os@austinwhittier.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/awhitty/vite-plugin-pagefiles"
+  },
+  "homepage": "https://github.com/awhitty/vite-plugin-pagefiles",
+  "bugs": "https://github.com/awhitty/vite-plugin-pagefiles/issues",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -10,22 +24,34 @@
       "require": "./dist/index.js",
       "import": "./dist/index.mjs",
       "types": "./dist/index.d.ts"
+    },
+    "./client": {
+      "types": "./client.d.ts"
     }
   },
+  "files": [
+    "dist",
+    "client.d.ts",
+    "client-react.d.ts",
+    "client-solid.d.ts",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsup",
     "build:watch": "npm run build -- --watch --ignore-watch examples",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix"
+    "check:lint": "eslint .",
+    "check:lint:fix": "eslint . --fix",
+    "check:ts": "tsc --noEmit",
+    "check": "run-p -l check:lint check:ts",
+    "prepublishOnly": "run-s -l check build",
+    "release": "bumpp --commit --tag --push"
   },
-  "keywords": [],
-  "author": "Austin Whittier",
-  "license": "ISC",
   "devDependencies": {
     "@types/node": "^17.0.40",
     "@types/picomatch": "^2.3.0",
     "@typescript-eslint/eslint-plugin": "^5.21.0",
     "@typescript-eslint/parser": "^5.21.0",
+    "bumpp": "^7.1.1",
     "eslint": "^8.14.0",
     "eslint-config-prettier": "^8.5.0",
     "eslint-plugin-import": "^2.26.0",
@@ -34,6 +60,7 @@
     "eslint-plugin-react": "^7.29.4",
     "eslint-plugin-react-hooks": "^4.5.0",
     "eslint-plugin-simple-import-sort": "^7.0.0",
+    "npm-run-all": "^4.1.5",
     "prettier": "^2.6.2",
     "tsup": "^6.1.0",
     "typescript": "^4.7.3",

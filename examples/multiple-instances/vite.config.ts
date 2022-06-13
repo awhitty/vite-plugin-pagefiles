@@ -1,5 +1,3 @@
-/// <reference types="./pagefiles" />
-
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import pagefiles from "vite-plugin-pagefiles";
@@ -10,9 +8,12 @@ export default defineConfig({
   plugins: [
     react(),
     pagefiles({
-      onRoutesGenerated: (pages) => {
-        console.log(pages.map((p) => p.meta.key));
-      },
+      files: "src/routes/pages/**/*.page.tsx",
+      moduleId: "virtual:pagefiles/pages",
+    }),
+    pagefiles({
+      files: "src/routes/sidebars/**/*.page.tsx",
+      moduleId: "virtual:pagefiles/sidebars",
     }),
   ],
 });

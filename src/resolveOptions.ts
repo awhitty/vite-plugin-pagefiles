@@ -39,7 +39,7 @@ export function resolveOptions(
   return {
     globs: globs,
     moduleId: moduleId,
-    resolvedModuleId: `\0/@vite-plugin-pagefiles/${moduleId}`,
+    resolvedModuleId: `/@vite-plugin-pagefiles/${moduleId}`,
     importMode: importMode,
     onRoutesGenerated: options.onRoutesGenerated,
   };

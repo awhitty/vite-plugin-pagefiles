@@ -1,4 +1,4 @@
 declare module "virtual:pagefiles" {
-  const routes: any;
+  const routes: { path: string; element: JSX.Element }[];
   export default routes;
 }

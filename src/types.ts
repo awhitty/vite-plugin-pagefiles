@@ -36,7 +36,7 @@ export interface UserOptions {
   moduleId?: string;
 
   /**
-   * Specifies whether to use sync or async (e.g. `React.lazy()`) loading for
+   * Specifies whether to use sync or async (i.e. `React.lazy()`) loading for
    * pagefiles. Accepts a function to process files individually.
    *
    * @default `sync` for the top-level `/` path, `async` for everything else
