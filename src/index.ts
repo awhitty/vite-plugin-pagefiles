@@ -3,7 +3,7 @@ import { Plugin } from "vite";
 import { PagefileManager } from "./PagefileManager";
 import type { UserOptions } from "./types";
 
-function pagefilesPlugin(userOptions: UserOptions): Plugin {
+function pagefilesPlugin(userOptions: UserOptions = {}): Plugin {
   let mgr: PagefileManager;
 
   return {

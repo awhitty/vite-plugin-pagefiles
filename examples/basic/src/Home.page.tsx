@@ -1,6 +1,5 @@
 import { Link } from "react-router-dom";
-
-import { PagefileMeta } from "./types";
+import { PagefileMeta } from "vite-plugin-pagefiles";
 
 export const meta: PagefileMeta = {
   path: "/",

@@ -9,10 +9,6 @@ export default defineConfig({
   clearScreen: false,
   plugins: [
     react(),
-    pagefiles({
-      onRoutesGenerated: (pages) => {
-        console.log(pages.map((p) => p.meta.key));
-      },
-    }),
+    pagefiles(),
   ],
 });
