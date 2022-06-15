@@ -11,9 +11,8 @@ export interface PagefileMeta {
 
 export interface PagefileData {
   filePath: string;
-  exportNames: string[];
+  exports: string[];
   meta: PagefileMeta;
-  defaultExportDisplayName: string;
 }
 
 export type ImportMode = "sync" | "async";

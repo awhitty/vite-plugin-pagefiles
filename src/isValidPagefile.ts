@@ -1,12 +1,6 @@
+import { RawPagefileData } from "./extractPagefileData";
 import { isDefined } from "./isDefined";
-import { PagefileData, PagefileMeta } from "./types";
-
-export interface RawPagefileData {
-  filePath: string;
-  exportNames: string[];
-  meta?: PagefileMeta;
-  defaultExportDisplayName?: string;
-}
+import { PagefileData } from "./types";
 
 export function validatePagefile(p: RawPagefileData): string[] {
   const result = [];
@@ -15,7 +9,7 @@ export function validatePagefile(p: RawPagefileData): string[] {
     result.push("Missing meta export");
   }
 
-  if (!p.exportNames.includes("default")) {
+  if (!p.exports.includes("default")) {
     result.push("Missing default export");
   }
 

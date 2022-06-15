@@ -1,8 +1,24 @@
 import * as esbuild from "esbuild";
+import { StdinOptions } from "esbuild";
 import { Worker } from "node:worker_threads";
 
 import { isDefined } from "./isDefined";
-import { RawPagefileData } from "./isValidPagefile";
+import { PagefileMeta } from "./types";
+
+export interface RawPagefileData {
+  filePath: string;
+  exports: string[];
+  meta?: PagefileMeta;
+}
+
+function createEsbuildStdin(root: string, contents: string): StdinOptions {
+  return {
+    contents: contents,
+    sourcefile: "import-sandbox.js",
+    loader: "ts",
+    resolveDir: root,
+  };
+}
 
 /**
  * Extracts metadata from a file at a given path. The metadata is used
@@ -16,9 +32,13 @@ import { RawPagefileData } from "./isValidPagefile";
  *  that imports the given file and reads out some metadata from the file.
  *  esbuild makes it possible to import TypeScript and JSX and execute it in a
  *  Worker environment. The entrypoint assumes it's running in a Worker and
- *  calls process.exit(0) on completion, regardless of error state.
+ *  calls process.exit(0) on completion.
  *
- *  2) Evaluate the entrypoint in a worker thread and resolve or reject based on
+ *  2) Use esbuild.build() again on the file directly. This time bundle as esm
+ *  to statically extract the exports from the file from the metafile in the
+ *  bundle result.
+ *
+ *  3) Evaluate the entrypoint in a worker thread and resolve or reject based on
  *  how the worker executes. The worker thread makes it possible to sandbox the
  *  script's execution (as opposed to just using `eval`) to avoid issues of
  *  module side effects trashing the global scope.
@@ -29,33 +49,7 @@ export async function extractPagefileData(
   root: string,
   path: string
 ): Promise<RawPagefileData> {
-  const bundleResult = await esbuild.build({
-    stdin: {
-      contents: `
-
-import { parentPort } from 'node:worker_threads';
-import { exit } from 'node:process';
-
-parentPort.once('message', async () => {
-    try {
-      const allExports = await import("${path}");
-      parentPort.postMessage({
-        meta: allExports.meta,
-        exportNames: Object.keys(allExports),
-        defaultExportDisplayName: allExports.default?.displayName ?? allExports.default?.name,
-      });
-    } catch (e) {
-      parentPort.postMessage(e);
-    } finally {
-      exit(0);
-    }
-});
-
-          `.trim(),
-      sourcefile: "import-sandbox.js",
-      loader: "ts",
-      resolveDir: root,
-    },
+  const esbuildSharedOptions = {
     platform: "node",
     format: "cjs",
     outdir: "none",
@@ -63,16 +57,50 @@ parentPort.once('message', async () => {
     write: false,
     bundle: true,
     logLevel: "silent",
+  } as const;
+
+  const runtimeBundle = await esbuild.build({
+    ...esbuildSharedOptions,
+    stdin: createEsbuildStdin(
+      root,
+      `
+
+import { parentPort } from 'node:worker_threads';
+import { exit } from 'node:process';
+
+import { meta } from "${path}";
+
+parentPort.once('message', async () => {
+  parentPort.postMessage({ meta });
+  exit(0);
+});
+
+      `.trim()
+    ),
   });
 
-  if (bundleResult.errors.length > 0) {
+  const staticBundle = await esbuild.build({
+    ...esbuildSharedOptions,
+    format: "esm",
+    entryPoints: [path],
+  });
+
+  if (runtimeBundle.errors.length > 0) {
     throw new Error(`esbuild failed with errors at ${path}`);
   }
 
-  const outputFile = bundleResult.outputFiles[0];
+  const outputFile = runtimeBundle.outputFiles[0];
 
   if (!isDefined(outputFile)) {
     throw new Error(`esbuild built an empty result at ${path}`);
+  }
+
+  const staticOutputMeta = Object.values(
+    staticBundle.metafile?.outputs ?? {}
+  )[0];
+
+  if (!isDefined(staticOutputMeta)) {
+    throw new Error(`esbuild built empty static result at ${path}`);
   }
 
   const workerSrc = outputFile.text;
@@ -84,7 +112,11 @@ parentPort.once('message', async () => {
         reject(pageDataOrError);
       } else {
         // TODO: Could validate the shape of pageDataOrError at this point
-        resolve({ ...pageDataOrError, filePath: path });
+        resolve({
+          ...pageDataOrError,
+          filePath: path,
+          exports: staticOutputMeta.exports,
+        });
       }
     });
 

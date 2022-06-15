@@ -3,14 +3,10 @@ import fg from "fast-glob";
 import picomatch from "picomatch";
 import { FSWatcher, ModuleNode, ResolvedConfig, ViteDevServer } from "vite";
 
-import { extractPagefileData } from "./extractPagefileData";
+import { extractPagefileData, RawPagefileData } from "./extractPagefileData";
 import { generateRoutesFile } from "./generateRoutesFile";
 import { isDefined } from "./isDefined";
-import {
-  isValidPagefile,
-  RawPagefileData,
-  validatePagefile,
-} from "./isValidPagefile";
+import { isValidPagefile, validatePagefile } from "./isValidPagefile";
 import { resolveOptions } from "./resolveOptions";
 import { ResolvedOptions, UserOptions } from "./types";
 
