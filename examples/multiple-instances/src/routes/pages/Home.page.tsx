@@ -1,8 +1,8 @@
-import { PagefileMeta } from "vite-plugin-pagefiles";
+import { PagefileMetaFn } from "vite-plugin-pagefiles";
 
-export const meta: PagefileMeta = {
+export const Meta: PagefileMetaFn = () => ({
   path: "/",
-};
+});
 
 export default function Home() {
   return (

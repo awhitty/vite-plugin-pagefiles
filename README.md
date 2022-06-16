@@ -20,9 +20,9 @@ define a single route in your application. Here's a very basic example:
 
 ```tsx
 // Home.page.tsx
-export const meta = {
+export const Meta = () => ({
   path: "/",
-};
+});
 
 export default function Home() {
   return (
@@ -34,12 +34,12 @@ export default function Home() {
 }
 ```
 
-The file has two exports: `meta` and `default`.
+The file has two exports: `Meta` and `default`.
 
-`meta` defines metadata about the route that is made available at build-time.
-The only property on this export that matters to the plugin is `path`, which is
-used to generate the route declaration, but you may add additional properties to
-handle as you wish.
+`Meta` is a function that defines metadata about the route that is made
+available at build-time. The only property in the object returned by this
+function that matters to the plugin is `path`, which is used to generate the
+route declaration, but you may add additional properties to handle as you wish.
 
 Similar to other file-based routing solutions, the `default` export is used as
 the page component.
@@ -113,11 +113,11 @@ in your project.
 Here's an example pagefile:
 
 ```tsx
-import type { PagefileMeta } from "vite-plugin-pagefiles";
+import type { PagefileMetaFn } from "vite-plugin-pagefiles";
 
-export const meta: PagefileMeta = {
+export const Meta: PagefileMetaFn = () => ({
   path: "/",
-};
+});
 
 export default function Home() {
   return (

@@ -9,6 +9,8 @@ export interface PagefileMeta {
   path: string;
 }
 
+export type PagefileMetaFn = () => PagefileMeta;
+
 export interface PagefileData {
   filePath: string;
   exports: string[];

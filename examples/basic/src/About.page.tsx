@@ -1,10 +1,10 @@
 import { Link } from "react-router-dom";
-import { PagefileMeta } from "vite-plugin-pagefiles";
+import { PagefileMetaFn } from "vite-plugin-pagefiles";
 
-export const meta: PagefileMeta = {
+export const Meta: PagefileMetaFn = () => ({
   path: "/about",
   key: ["about"],
-};
+});
 
 export default function About() {
   return (

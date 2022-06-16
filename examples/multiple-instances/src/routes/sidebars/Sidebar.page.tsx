@@ -1,8 +1,8 @@
-import { PagefileMeta } from "vite-plugin-pagefiles";
+import { PagefileMetaFn } from "vite-plugin-pagefiles";
 
-export const meta: PagefileMeta = {
-  path: "/",
-};
+export const Meta: PagefileMetaFn = () => ({
+  path: "/sidebar",
+});
 
 export default function Sidebar() {
   return <div>

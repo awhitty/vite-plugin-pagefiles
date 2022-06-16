@@ -80,10 +80,10 @@ export async function extractPagefileData(
 import { parentPort } from 'node:worker_threads';
 import { exit } from 'node:process';
 
-import { meta } from "${path}";
+import { Meta } from "${path}";
 
 parentPort.once('message', async () => {
-  parentPort.postMessage({ meta });
+  parentPort.postMessage({ meta: Meta() });
   exit(0);
 });
 
