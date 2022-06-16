@@ -1,5 +1,5 @@
 import * as esbuild from "esbuild";
-import { StdinOptions } from "esbuild";
+import { BuildOptions, Plugin, PluginBuild, StdinOptions } from "esbuild";
 import { Worker } from "node:worker_threads";
 
 import { isDefined } from "./isDefined";
@@ -17,6 +17,18 @@ function createEsbuildStdin(root: string, contents: string): StdinOptions {
     sourcefile: "import-sandbox.js",
     loader: "ts",
     resolveDir: root,
+  };
+}
+
+function sideEffectsOverridePlugin(): Plugin {
+  return {
+    name: "side-effects-override",
+    setup(build: PluginBuild) {
+      build.onResolve({ filter: /^\?skipresolve/ }, async (args) => {
+        const result = await build.resolve(args.path + "?skipresolve");
+        return { ...result, sideEffects: false };
+      });
+    },
   };
 }
 
@@ -49,15 +61,15 @@ export async function extractPagefileData(
   root: string,
   path: string
 ): Promise<RawPagefileData> {
-  const esbuildSharedOptions = {
+  const esbuildSharedOptions: Partial<BuildOptions> = {
     platform: "node",
     format: "cjs",
     outdir: "none",
-    metafile: true,
     write: false,
     bundle: true,
     logLevel: "silent",
-  } as const;
+    plugins: [sideEffectsOverridePlugin()],
+  };
 
   const runtimeBundle = await esbuild.build({
     ...esbuildSharedOptions,
@@ -81,6 +93,7 @@ parentPort.once('message', async () => {
 
   const staticBundle = await esbuild.build({
     ...esbuildSharedOptions,
+    metafile: true,
     format: "esm",
     entryPoints: [path],
   });
@@ -89,7 +102,7 @@ parentPort.once('message', async () => {
     throw new Error(`esbuild failed with errors at ${path}`);
   }
 
-  const outputFile = runtimeBundle.outputFiles[0];
+  const outputFile = runtimeBundle.outputFiles?.[0];
 
   if (!isDefined(outputFile)) {
     throw new Error(`esbuild built an empty result at ${path}`);
