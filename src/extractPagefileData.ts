@@ -68,6 +68,10 @@ export async function extractPagefileData(
     write: false,
     bundle: true,
     logLevel: "silent",
+    loader: {
+      ".png": "text",
+      ".svg": "text",
+    },
     plugins: [sideEffectsOverridePlugin()],
   };
 
