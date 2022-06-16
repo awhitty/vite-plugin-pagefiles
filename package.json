@@ -1,6 +1,6 @@
 {
   "name": "vite-plugin-pagefiles",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "packageManager": "pnpm@7.2.1",
   "description": "Vite plugin to statically extract metadata from component files and generate client-side route declarations",
   "keywords": [
