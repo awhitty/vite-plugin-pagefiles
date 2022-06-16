@@ -8,6 +8,7 @@ function pagefilesPlugin(userOptions: UserOptions = {}): Plugin {
 
   return {
     name: "vite-plugin-pagefiles",
+    enforce: "pre",
     async configResolved(config) {
       mgr = new PagefileManager(userOptions, config);
       await mgr.searchAndAddFiles();
