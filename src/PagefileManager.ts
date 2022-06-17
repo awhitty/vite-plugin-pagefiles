@@ -153,6 +153,9 @@ export class PagefileManager {
   }
 
   private shouldThrowErrors() {
-    return !this.server || this.viteConfig.mode === "production";
+    return (
+      this.viteConfig.command === "build" ||
+      this.viteConfig.mode === "production"
+    );
   }
 }
