@@ -33,9 +33,7 @@ export class PagefileManager {
       onlyFiles: true,
     });
 
-    for (const file of files) {
-      await this.addPage(file);
-    }
+    await this.addPages(files);
 
     if (isDefined(this.options.onRoutesGenerated)) {
       await this.options.onRoutesGenerated(this.getValidPagefiles());
@@ -83,7 +81,7 @@ export class PagefileManager {
     watcher.on("add", async (path) => {
       path = slash(path);
       if (isMatchedFile(path)) {
-        await this.addPage(path);
+        await this.addPages(path);
         await this.onUpdate();
       }
     });
@@ -91,24 +89,24 @@ export class PagefileManager {
     watcher.on("change", async (path) => {
       path = slash(path);
       if (isMatchedFile(path)) {
-        await this.addPage(path);
+        await this.addPages(path);
         await this.onUpdate();
       }
     });
   }
 
-  private async addPage(paths: string | string[]) {
-    for (const path of toArray(paths)) {
-      try {
-        const data = await extractPagefileData(this.viteConfig.root, path);
-        this.pageMetaMap.set(path, data);
-      } catch (e) {
-        this.pageMetaMap.delete(path);
-        if (this.shouldThrowErrors()) {
-          throw e;
-        } else {
-          this.viteConfig.logger.error((e as Error).toString());
-        }
+  private async addPages(pathOrPaths: string | string[]) {
+    const paths = toArray(pathOrPaths);
+    try {
+      const data = await extractPagefileData(this.viteConfig.root, paths);
+      data.forEach((d) => {
+        this.pageMetaMap.set(d.filePath, d);
+      });
+    } catch (e) {
+      if (this.shouldThrowErrors()) {
+        throw e;
+      } else {
+        this.viteConfig.logger.error((e as Error).toString());
       }
     }
   }

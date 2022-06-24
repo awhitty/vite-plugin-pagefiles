@@ -1,5 +1,5 @@
 import * as esbuild from "esbuild";
-import { BuildOptions, Plugin, PluginBuild, StdinOptions } from "esbuild";
+import { OnLoadResult, PluginBuild } from "esbuild";
 import { Worker } from "node:worker_threads";
 
 import { isDefined } from "./isDefined";
@@ -7,30 +7,84 @@ import { PagefileMeta } from "./types";
 
 export interface RawPagefileData {
   filePath: string;
-  exports: string[];
   meta?: PagefileMeta;
 }
 
-function createEsbuildStdin(root: string, contents: string): StdinOptions {
+function createEsbuildContents(root: string, contents: string): OnLoadResult {
   return {
-    contents: contents,
-    sourcefile: "import-sandbox.js",
     loader: "ts",
+    contents: contents,
     resolveDir: root,
   };
 }
 
-function sideEffectsOverridePlugin(): Plugin {
+function createEsbuildPlugin() {
+  let contents: OnLoadResult = { contents: "" };
+  let allowlist: string[] = [];
   return {
-    name: "side-effects-override",
-    setup(build: PluginBuild) {
-      build.onResolve({ filter: /^\?skipresolve/ }, async (args) => {
-        const result = await build.resolve(args.path + "?skipresolve");
-        return { ...result, sideEffects: false };
-      });
+    setContents: (val: OnLoadResult) => {
+      contents = val;
+    },
+    setAllowlist: (val: string[]) => {
+      allowlist = val;
+    },
+    plugin: {
+      name: "entrypoint-override",
+      setup(build: PluginBuild) {
+        const skipResolve = {};
+        build.onResolve({ filter: /.*/ }, async (args) => {
+          if (args.pluginData === skipResolve) {
+            return;
+          }
+
+          if (allowlist.includes(args.path)) {
+            const resolveResult = await build.resolve(args.path, {
+              resolveDir: args.resolveDir,
+              pluginData: skipResolve,
+            });
+
+            return resolveResult;
+          } else {
+            return { path: "null.js", namespace: "null" };
+          }
+        });
+
+        build.onResolve({ filter: /^entrypoint\.js$/ }, (args) => ({
+          path: args.path,
+          namespace: "entrypoint-override",
+        }));
+
+        build.onLoad(
+          { filter: /.*/, namespace: "entrypoint-override" },
+          () => contents
+        );
+
+        build.onLoad({ filter: /.*/, namespace: "null" }, () => ({
+          contents: `module.exports = {}`,
+        }));
+      },
     },
   };
 }
+
+const pluginInstance = createEsbuildPlugin();
+
+const esbuildInstance = esbuild.build({
+  platform: "node",
+  format: "cjs",
+  outdir: ".",
+  write: false,
+  bundle: true,
+  incremental: true,
+  logLevel: "silent",
+  metafile: true,
+  loader: {
+    ".png": "text",
+    ".svg": "text",
+  },
+  plugins: [pluginInstance.plugin],
+  entryPoints: ["entrypoint.js"],
+});
 
 /**
  * Extracts metadata from a file at a given path. The metadata is used
@@ -59,82 +113,68 @@ function sideEffectsOverridePlugin(): Plugin {
  */
 export async function extractPagefileData(
   root: string,
-  path: string
-): Promise<RawPagefileData> {
-  const esbuildSharedOptions: Partial<BuildOptions> = {
-    platform: "node",
-    format: "cjs",
-    outdir: "none",
-    write: false,
-    bundle: true,
-    logLevel: "silent",
-    loader: {
-      ".png": "text",
-      ".svg": "text",
-    },
-    plugins: [sideEffectsOverridePlugin()],
-  };
+  paths: string[]
+): Promise<RawPagefileData[]> {
+  const runtimeB = await esbuildInstance;
 
-  const runtimeBundle = await esbuild.build({
-    ...esbuildSharedOptions,
-    stdin: createEsbuildStdin(
+  const pathImports = paths
+    .map((path, i) => `import { Meta as Meta${i} } from "${path}";`)
+    .join("\n");
+
+  const pathMessages = paths.map((_, i) => `Meta${i}()`).join(",");
+
+  pluginInstance.setContents(
+    createEsbuildContents(
       root,
       `
 
 import { parentPort } from 'node:worker_threads';
 import { exit } from 'node:process';
 
-import { Meta } from "${path}";
+${pathImports}
 
 parentPort.once('message', async () => {
-  parentPort.postMessage({ meta: Meta() });
+  parentPort.postMessage([${pathMessages}]);
   exit(0);
 });
 
       `.trim()
-    ),
-  });
+    )
+  );
 
-  const staticBundle = await esbuild.build({
-    ...esbuildSharedOptions,
-    metafile: true,
-    format: "esm",
-    entryPoints: [path],
-  });
+  pluginInstance.setAllowlist([
+    ...paths,
+    "node:worker_threads",
+    "node:process",
+    "entrypoint.js",
+  ]);
+
+  const runtimeBundle = await runtimeB.rebuild!();
 
   if (runtimeBundle.errors.length > 0) {
-    throw new Error(`esbuild failed with errors at ${path}`);
+    throw new Error(`esbuild failed with errors`);
   }
 
   const outputFile = runtimeBundle.outputFiles?.[0];
 
   if (!isDefined(outputFile)) {
-    throw new Error(`esbuild built an empty result at ${path}`);
-  }
-
-  const staticOutputMeta = Object.values(
-    staticBundle.metafile?.outputs ?? {}
-  )[0];
-
-  if (!isDefined(staticOutputMeta)) {
-    throw new Error(`esbuild built empty static result at ${path}`);
+    throw new Error(`esbuild built an empty result`);
   }
 
   const workerSrc = outputFile.text;
 
   return new Promise((resolve, reject) => {
     const worker = new Worker(workerSrc, { eval: true });
-    worker.once("message", (pageDataOrError: RawPagefileData | Error) => {
-      if (pageDataOrError instanceof Error) {
-        reject(pageDataOrError);
-      } else {
-        // TODO: Could validate the shape of pageDataOrError at this point
-        resolve({
-          ...pageDataOrError,
-          filePath: path,
-          exports: staticOutputMeta.exports,
-        });
-      }
+
+    worker.once("message", (metas: unknown[]) => {
+      resolve(
+        // TODO: Validate shape of meta values at this point
+        metas.map((meta, i) => ({ meta: meta as any, filePath: paths[i] }))
+      );
+    });
+
+    worker.once("error", (error) => {
+      reject(error);
     });
 
     // Post an empty message to let the worker know we're ready

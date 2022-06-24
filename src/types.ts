@@ -13,7 +13,6 @@ export type PagefileMetaFn = () => PagefileMeta;
 
 export interface PagefileData {
   filePath: string;
-  exports: string[];
   meta: PagefileMeta;
 }
 

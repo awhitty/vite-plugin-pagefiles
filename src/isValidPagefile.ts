@@ -9,10 +9,6 @@ export function validatePagefile(p: RawPagefileData): string[] {
     result.push("Missing meta export");
   }
 
-  if (!p.exports.includes("default")) {
-    result.push("Missing default export");
-  }
-
   return result;
 }
 
