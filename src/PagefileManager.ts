@@ -124,6 +124,8 @@ export class PagefileManager {
         moduleGraph.invalidateModule(mod, seen);
       });
     }
+
+    this.server?.watcher.emit("change", this.options.resolvedModuleId);
   }
 
   private async onUpdate() {
