@@ -18,73 +18,42 @@ function createEsbuildContents(root: string, contents: string): OnLoadResult {
   };
 }
 
-function createEsbuildPlugin() {
-  let contents: OnLoadResult = { contents: "" };
-  let allowlist: string[] = [];
+function createEsbuildPlugin(contents: OnLoadResult, allowlist: string[]) {
   return {
-    setContents: (val: OnLoadResult) => {
-      contents = val;
-    },
-    setAllowlist: (val: string[]) => {
-      allowlist = val;
-    },
-    plugin: {
-      name: "entrypoint-override",
-      setup(build: PluginBuild) {
-        const skipResolve = {};
-        build.onResolve({ filter: /.*/ }, async (args) => {
-          if (args.pluginData === skipResolve) {
-            return;
-          }
+    name: "entrypoint-override",
+    setup(build: PluginBuild) {
+      const skipResolve = {};
+      build.onResolve({ filter: /.*/ }, async (args) => {
+        if (args.pluginData === skipResolve) {
+          return;
+        }
 
-          if (allowlist.includes(args.path)) {
-            const resolveResult = await build.resolve(args.path, {
-              resolveDir: args.resolveDir,
-              pluginData: skipResolve,
-            });
+        if (allowlist.includes(args.path)) {
+          return await build.resolve(args.path, {
+            resolveDir: args.resolveDir,
+            pluginData: skipResolve,
+          });
+        } else {
+          return { path: "null.js", namespace: "null" };
+        }
+      });
 
-            return resolveResult;
-          } else {
-            return { path: "null.js", namespace: "null" };
-          }
-        });
+      build.onResolve({ filter: /^entrypoint\.js$/ }, (args) => ({
+        path: args.path,
+        namespace: "entrypoint-override",
+      }));
 
-        build.onResolve({ filter: /^entrypoint\.js$/ }, (args) => ({
-          path: args.path,
-          namespace: "entrypoint-override",
-        }));
+      build.onLoad(
+        { filter: /.*/, namespace: "entrypoint-override" },
+        () => contents
+      );
 
-        build.onLoad(
-          { filter: /.*/, namespace: "entrypoint-override" },
-          () => contents
-        );
-
-        build.onLoad({ filter: /.*/, namespace: "null" }, () => ({
-          contents: `module.exports = {}`,
-        }));
-      },
+      build.onLoad({ filter: /.*/, namespace: "null" }, () => ({
+        contents: `module.exports = {}`,
+      }));
     },
   };
 }
-
-const pluginInstance = createEsbuildPlugin();
-
-const esbuildInstance = esbuild.build({
-  platform: "node",
-  format: "cjs",
-  outdir: ".",
-  write: false,
-  bundle: true,
-  incremental: true,
-  logLevel: "silent",
-  metafile: true,
-  loader: {
-    ".png": "text",
-    ".svg": "text",
-  },
-  plugins: [pluginInstance.plugin],
-  entryPoints: ["entrypoint.js"],
-});
 
 /**
  * Extracts metadata from a file at a given path. The metadata is used
@@ -115,15 +84,13 @@ export async function extractPagefileData(
   root: string,
   paths: string[]
 ): Promise<RawPagefileData[]> {
-  const runtimeB = await esbuildInstance;
-
   const pathImports = paths
     .map((path, i) => `import { Meta as Meta${i} } from "${path}";`)
     .join("\n");
 
   const pathMessages = paths.map((_, i) => `Meta${i}()`).join(",");
 
-  pluginInstance.setContents(
+  const plugin = createEsbuildPlugin(
     createEsbuildContents(
       root,
       `
@@ -139,23 +106,31 @@ parentPort.once('message', async () => {
 });
 
       `.trim()
-    )
+    ),
+    [...paths, "node:worker_threads", "node:process", "entrypoint.js"]
   );
 
-  pluginInstance.setAllowlist([
-    ...paths,
-    "node:worker_threads",
-    "node:process",
-    "entrypoint.js",
-  ]);
+  const buildResult = await esbuild.build({
+    platform: "node",
+    format: "cjs",
+    outdir: ".",
+    write: false,
+    bundle: true,
+    logLevel: "silent",
+    metafile: true,
+    loader: {
+      ".png": "text",
+      ".svg": "text",
+    },
+    plugins: [plugin],
+    entryPoints: ["entrypoint.js"],
+  });
 
-  const runtimeBundle = await runtimeB.rebuild!();
-
-  if (runtimeBundle.errors.length > 0) {
+  if (buildResult.errors.length > 0) {
     throw new Error(`esbuild failed with errors`);
   }
 
-  const outputFile = runtimeBundle.outputFiles?.[0];
+  const outputFile = buildResult.outputFiles?.[0];
 
   if (!isDefined(outputFile)) {
     throw new Error(`esbuild built an empty result`);
