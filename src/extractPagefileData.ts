@@ -1,35 +1,71 @@
 import * as esbuild from "esbuild";
-import { BuildOptions, Plugin, PluginBuild, StdinOptions } from "esbuild";
+import { OnLoadResult, PluginBuild } from "esbuild";
 import { Worker } from "node:worker_threads";
 
 import { isDefined } from "./isDefined";
-import { PagefileMeta } from "./types";
+import { UnableToExtractMetaError } from "./PagefilesError";
+import { ExtractedPagefileData } from "./types";
 
-export interface RawPagefileData {
-  filePath: string;
-  exports: string[];
-  meta?: PagefileMeta;
-}
-
-function createEsbuildStdin(root: string, contents: string): StdinOptions {
+function createEsbuildContents(root: string, contents: string): OnLoadResult {
   return {
-    contents: contents,
-    sourcefile: "import-sandbox.js",
     loader: "ts",
+    contents: contents,
     resolveDir: root,
   };
 }
 
-function sideEffectsOverridePlugin(): Plugin {
+function createEsbuildPlugin(contents: OnLoadResult, allowlist: string[]) {
   return {
-    name: "side-effects-override",
+    name: "entrypoint-override",
     setup(build: PluginBuild) {
-      build.onResolve({ filter: /^\?skipresolve/ }, async (args) => {
-        const result = await build.resolve(args.path + "?skipresolve");
-        return { ...result, sideEffects: false };
+      const skipResolve = {};
+      build.onResolve({ filter: /.*/ }, async (args) => {
+        if (args.pluginData === skipResolve) {
+          return;
+        }
+
+        if (allowlist.includes(args.path)) {
+          return await build.resolve(args.path, {
+            resolveDir: args.resolveDir,
+            pluginData: skipResolve,
+          });
+        } else {
+          return { path: "null.js", namespace: "null" };
+        }
       });
+
+      build.onResolve({ filter: /^entrypoint\.js$/ }, (args) => ({
+        path: args.path,
+        namespace: "entrypoint-override",
+      }));
+
+      build.onLoad(
+        { filter: /.*/, namespace: "entrypoint-override" },
+        () => contents
+      );
+
+      build.onLoad({ filter: /.*/, namespace: "null" }, () => ({
+        contents: `module.exports = {}`,
+      }));
     },
   };
+}
+
+/**
+ * Attempts to extract the path to some file that caused a build failure based
+ * on the text of the first error message.
+ */
+function extractFilePathFromFirstBuildFailure(failure: esbuild.BuildFailure) {
+  const firstError = failure.errors[0];
+  return firstError.text.match(
+    /No matching export in "([\w\W]*)" for import "Meta"/
+  )?.[1];
+}
+
+interface ExtractionWorkerData {
+  meta: object;
+  name?: string;
+  displayName?: string;
 }
 
 /**
@@ -59,82 +95,91 @@ function sideEffectsOverridePlugin(): Plugin {
  */
 export async function extractPagefileData(
   root: string,
-  path: string
-): Promise<RawPagefileData> {
-  const esbuildSharedOptions: Partial<BuildOptions> = {
-    platform: "node",
-    format: "cjs",
-    outdir: "none",
-    write: false,
-    bundle: true,
-    logLevel: "silent",
-    loader: {
-      ".png": "text",
-      ".svg": "text",
-    },
-    plugins: [sideEffectsOverridePlugin()],
-  };
+  paths: string[]
+): Promise<ExtractedPagefileData[]> {
+  const pathImports = paths
+    .map(
+      (path, i) =>
+        `import { default as Default${i}, Meta as Meta${i} } from "${path}";`
+    )
+    .join("\n");
 
-  const runtimeBundle = await esbuild.build({
-    ...esbuildSharedOptions,
-    stdin: createEsbuildStdin(
+  const pathMessages = paths
+    .map(
+      (_, i) =>
+        `{ meta: Meta${i}(), name: Default${i}.name, displayName: Default${i}.displayName }`
+    )
+    .join(",");
+
+  const plugin = createEsbuildPlugin(
+    createEsbuildContents(
       root,
       `
 
 import { parentPort } from 'node:worker_threads';
 import { exit } from 'node:process';
 
-import { Meta } from "${path}";
+${pathImports}
 
 parentPort.once('message', async () => {
-  parentPort.postMessage({ meta: Meta() });
+  parentPort.postMessage([${pathMessages}]);
   exit(0);
 });
 
       `.trim()
     ),
-  });
+    [...paths, "node:worker_threads", "node:process", "entrypoint.js"]
+  );
 
-  const staticBundle = await esbuild.build({
-    ...esbuildSharedOptions,
-    metafile: true,
-    format: "esm",
-    entryPoints: [path],
-  });
-
-  if (runtimeBundle.errors.length > 0) {
-    throw new Error(`esbuild failed with errors at ${path}`);
+  let buildResult: esbuild.BuildResult;
+  try {
+    buildResult = await esbuild.build({
+      platform: "node",
+      format: "cjs",
+      outdir: ".",
+      write: false,
+      bundle: true,
+      logLevel: "silent",
+      metafile: true,
+      loader: {
+        ".png": "text",
+        ".svg": "text",
+      },
+      plugins: [plugin],
+      entryPoints: ["entrypoint.js"],
+    });
+  } catch (failure) {
+    const castFailure = failure as esbuild.BuildFailure;
+    const matchingFile = extractFilePathFromFirstBuildFailure(castFailure);
+    throw new UnableToExtractMetaError(matchingFile);
   }
 
-  const outputFile = runtimeBundle.outputFiles?.[0];
+  const outputFile = buildResult.outputFiles?.[0];
 
   if (!isDefined(outputFile)) {
-    throw new Error(`esbuild built an empty result at ${path}`);
-  }
-
-  const staticOutputMeta = Object.values(
-    staticBundle.metafile?.outputs ?? {}
-  )[0];
-
-  if (!isDefined(staticOutputMeta)) {
-    throw new Error(`esbuild built empty static result at ${path}`);
+    // Not sure if this case is possible
+    throw new UnableToExtractMetaError();
   }
 
   const workerSrc = outputFile.text;
 
   return new Promise((resolve, reject) => {
     const worker = new Worker(workerSrc, { eval: true });
-    worker.once("message", (pageDataOrError: RawPagefileData | Error) => {
-      if (pageDataOrError instanceof Error) {
-        reject(pageDataOrError);
-      } else {
-        // TODO: Could validate the shape of pageDataOrError at this point
-        resolve({
-          ...pageDataOrError,
-          filePath: path,
-          exports: staticOutputMeta.exports,
-        });
-      }
+
+    worker.once("message", (importExtractions: ExtractionWorkerData[]) => {
+      resolve(
+        // TODO: Validate shape of meta values at this point
+        importExtractions.map((extraction, i) => ({
+          meta: extraction.meta,
+          defaultExportName: extraction.name,
+          defaultExportDisplayName: extraction.displayName,
+          filePath: paths[i],
+        }))
+      );
+    });
+
+    worker.once("error", (error) => {
+      reject(error);
     });
 
     // Post an empty message to let the worker know we're ready

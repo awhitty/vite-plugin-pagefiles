@@ -1,5 +1,6 @@
 import { Plugin } from "vite";
 
+import { PLUGIN_NAME } from "./constants";
 import { PagefileManager } from "./PagefileManager";
 import type { UserOptions } from "./types";
 
@@ -7,7 +8,7 @@ function pagefilesPlugin(userOptions: UserOptions = {}): Plugin {
   let mgr: PagefileManager;
 
   return {
-    name: "vite-plugin-pagefiles",
+    name: PLUGIN_NAME,
     enforce: "pre",
     async configResolved(config) {
       mgr = new PagefileManager(userOptions, config);
