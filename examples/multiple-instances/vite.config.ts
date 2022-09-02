@@ -8,11 +8,11 @@ export default defineConfig({
   plugins: [
     react(),
     pagefiles({
-      files: "src/routes/pages/**/*.page.tsx",
+      pages: "src/routes/pages/**/*.page.tsx",
       moduleId: "virtual:pagefiles/pages",
     }),
     pagefiles({
-      files: "src/routes/sidebars/**/*.page.tsx",
+      pages: "src/routes/sidebars/**/*.page.tsx",
       moduleId: "virtual:pagefiles/sidebars",
     }),
   ],

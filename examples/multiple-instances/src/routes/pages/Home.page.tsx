@@ -7,7 +7,7 @@ export const Meta: PagefileMetaFn = () => ({
 export default function Home() {
   return (
     <div>
-      <h1>Home</h1>
+      <h1>Test</h1>
     </div>
   );
 }
