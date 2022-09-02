@@ -9,7 +9,8 @@ import {
   UserOptions,
 } from "./types";
 
-const DEFAULT_SEARCH_GLOB = `src/**/*.page.tsx`;
+const DEFAULT_PAGE_GLOB = "src/**/*.page.tsx";
+const DEFAULT_LAYOUT_GLOB = "src/**/*.layout.tsx";
 const DEFAULT_MODULE_ID = "virtual:pagefiles";
 const DEFAULT_IMPORT_MODE = (pagefileData: PagefileData) =>
   pagefileData.meta?.path === "/" ? "sync" : "async";
@@ -18,7 +19,11 @@ export function resolveOptions(
   options: UserOptions,
   root: string
 ): ResolvedOptions {
-  const globs = toArray(options.files ?? DEFAULT_SEARCH_GLOB).map((g) =>
+  const pageGlobs = toArray(options.pages ?? DEFAULT_PAGE_GLOB).map((g) =>
+    slash(resolve(join(root, g)))
+  );
+
+  const layoutGlobs = toArray(options.layouts ?? DEFAULT_LAYOUT_GLOB).map((g) =>
     slash(resolve(join(root, g)))
   );
 
@@ -37,7 +42,8 @@ export function resolveOptions(
   }
 
   return {
-    globs: globs,
+    pageGlobs: pageGlobs,
+    layoutGlobs: layoutGlobs,
     moduleId: moduleId,
     resolvedModuleId: `/@vite-plugin-pagefiles/${moduleId}`,
     importMode: importMode,

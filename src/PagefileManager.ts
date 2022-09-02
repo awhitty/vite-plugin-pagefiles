@@ -1,24 +1,43 @@
 import { slash, toArray } from "@antfu/utils";
 import fg from "fast-glob";
+import colors from "picocolors";
 import picomatch from "picomatch";
 import { FSWatcher, ModuleNode, ResolvedConfig, ViteDevServer } from "vite";
 
-import { extractPagefileData, RawPagefileData } from "./extractPagefileData";
+import { PLUGIN_NAME } from "./constants";
+import { extractPagefileData } from "./extractPagefileData";
 import { generateRoutesFile } from "./generateRoutesFile";
 import { isDefined } from "./isDefined";
 import { isValidPagefile, validatePagefile } from "./isValidPagefile";
+import {
+  InvalidPagefileError,
+  isPagefilesError,
+  PagefilesError,
+  UnknownError,
+} from "./PagefilesError";
 import { resolveOptions } from "./resolveOptions";
-import { ResolvedOptions, UserOptions } from "./types";
+import {
+  ExtractedPagefileData,
+  PagefileData,
+  ResolvedOptions,
+  UserOptions,
+} from "./types";
 
 export class PagefileManager {
-  private server: ViteDevServer | undefined;
-  private readonly pageMetaMap = new Map<string, RawPagefileData>();
+  private readonly pageMetaMap = new Map<string, ExtractedPagefileData>();
   private readonly viteConfig: ResolvedConfig;
   private readonly options: ResolvedOptions;
+  private readonly isMatchedPage: picomatch.Matcher;
+  private readonly isMatchedLayout: picomatch.Matcher;
+
+  private server: ViteDevServer | undefined;
+  private cachedRoutesFile: string | null = null;
 
   constructor(userOptions: UserOptions, viteConfig: ResolvedConfig) {
     this.viteConfig = viteConfig;
     this.options = resolveOptions(userOptions, this.viteConfig.root);
+    this.isMatchedPage = picomatch(this.options.pageGlobs);
+    this.isMatchedLayout = picomatch(this.options.layoutGlobs);
   }
 
   setupViteServer(server: ViteDevServer) {
@@ -29,15 +48,15 @@ export class PagefileManager {
   }
 
   async searchAndAddFiles() {
-    const files = fg.sync(this.options.globs, {
-      onlyFiles: true,
-    });
+    const files = fg.sync(
+      [...this.options.pageGlobs, ...this.options.layoutGlobs],
+      {
+        onlyFiles: true,
+      }
+    );
 
     await this.addPages(files);
-
-    if (isDefined(this.options.onRoutesGenerated)) {
-      await this.options.onRoutesGenerated(this.getValidPagefiles());
-    }
+    await this.callRoutesGeneratedHook();
   }
 
   resolveVirtualModule(id: string) {
@@ -50,14 +69,9 @@ export class PagefileManager {
     if (id === this.options.resolvedModuleId) {
       await this.callRoutesGeneratedHook();
 
-      if (this.shouldThrowErrors()) {
-        this.throwIfAnyInvalidPagefile();
-      }
+      this.throwOrLogInvalidPagefiles();
 
-      const pagefiles = this.getValidPagefiles();
-      const importMode = this.options.importMode;
-
-      return generateRoutesFile(pagefiles, importMode);
+      return this.cachedRoutesFile ?? this.generateRoutesFile();
     }
   }
 
@@ -68,11 +82,9 @@ export class PagefileManager {
   }
 
   private setupWatcher(watcher: FSWatcher) {
-    const isMatchedFile = picomatch(this.options.globs);
-
     watcher.on("unlink", async (path) => {
       path = slash(path);
-      if (isMatchedFile(path)) {
+      if (this.isMatchedPage(path) || this.isMatchedLayout(path)) {
         await this.removePage(path);
         await this.onUpdate();
       }
@@ -80,7 +92,7 @@ export class PagefileManager {
 
     watcher.on("add", async (path) => {
       path = slash(path);
-      if (isMatchedFile(path)) {
+      if (this.isMatchedPage(path) || this.isMatchedLayout(path)) {
         await this.addPages(path);
         await this.onUpdate();
       }
@@ -88,7 +100,7 @@ export class PagefileManager {
 
     watcher.on("change", async (path) => {
       path = slash(path);
-      if (isMatchedFile(path)) {
+      if (this.isMatchedPage(path) || this.isMatchedLayout(path)) {
         await this.addPages(path);
         await this.onUpdate();
       }
@@ -99,14 +111,14 @@ export class PagefileManager {
     const paths = toArray(pathOrPaths);
     try {
       const data = await extractPagefileData(this.viteConfig.root, paths);
-      data.forEach((d) => {
-        this.pageMetaMap.set(d.filePath, d);
+      data.forEach((file) => {
+        this.pageMetaMap.set(file.filePath, file);
       });
     } catch (e) {
       if (this.shouldThrowErrors()) {
         throw e;
       } else {
-        this.viteConfig.logger.error((e as Error).toString());
+        this.logError(e);
       }
     }
   }
@@ -125,7 +137,55 @@ export class PagefileManager {
       });
     }
 
-    this.server?.watcher.emit("change", this.options.resolvedModuleId);
+    const nextValue = this.generateRoutesFile();
+    if (nextValue !== this.cachedRoutesFile) {
+      this.cachedRoutesFile = nextValue ?? null;
+      this.server?.watcher.emit("change", this.options.resolvedModuleId);
+    }
+  }
+
+  private generateRoutesFile() {
+    try {
+      const pagefiles = this.getValidPagefiles();
+      const importMode = this.options.importMode;
+      return generateRoutesFile(pagefiles, importMode);
+    } catch (e) {
+      if (this.shouldThrowErrors()) {
+        throw e;
+      } else {
+        this.logError(e);
+      }
+    }
+  }
+
+  private logError(e: unknown) {
+    if (isPagefilesError(e)) {
+      this.logPagefilesError(e);
+    } else {
+      this.logPagefilesError(new UnknownError(e));
+    }
+  }
+
+  private logPagefilesError(e: PagefilesError) {
+    this.viteConfig.logger.error(
+      [
+        e.message,
+        `  Plugin: ${colors.magenta(PLUGIN_NAME)}`,
+        `  File: ${colors.cyan(e.sourceFile)}`,
+      ].join("\n")
+    );
+
+    this.server?.ws.send({
+      type: "error",
+      err: {
+        plugin: PLUGIN_NAME,
+        message: `${e.message}${
+          e.sourceFile ? `\n\nFile: ${e.sourceFile}` : ""
+        }`,
+        id: e.errorCode,
+        stack: "",
+      },
+    });
   }
 
   private async onUpdate() {
@@ -134,21 +194,35 @@ export class PagefileManager {
     }
   }
 
-  private getValidPagefiles() {
-    return this.getAllPagefiles().filter(isValidPagefile);
+  private getValidPagefiles(): PagefileData[] {
+    return this.getAllPagefiles()
+      .map((file) => ({
+        meta: file.meta,
+        filePath: file.filePath,
+        isLayout: this.isMatchedLayout(file.filePath),
+        resolvedName:
+          file.meta?.name ??
+          file.defaultExportDisplayName ??
+          file.defaultExportName,
+      }))
+      .filter(isValidPagefile) as PagefileData[];
   }
 
   private getAllPagefiles() {
     return Array.from(this.pageMetaMap.values());
   }
 
-  private throwIfAnyInvalidPagefile() {
+  private throwOrLogInvalidPagefiles() {
     const badFile = this.getAllPagefiles().find((p) => !isValidPagefile(p));
     if (badFile) {
       const reasons = validatePagefile(badFile);
-      throw new Error(
-        `Bad pagefile at ${badFile.filePath}: ${reasons.join(", ")}`
-      );
+      const error = new InvalidPagefileError(badFile.filePath, reasons);
+
+      if (this.shouldThrowErrors()) {
+        throw error;
+      } else {
+        this.logError(error);
+      }
     }
   }
 

@@ -3,12 +3,8 @@ import { OnLoadResult, PluginBuild } from "esbuild";
 import { Worker } from "node:worker_threads";
 
 import { isDefined } from "./isDefined";
-import { PagefileMeta } from "./types";
-
-export interface RawPagefileData {
-  filePath: string;
-  meta?: PagefileMeta;
-}
+import { UnableToExtractMetaError } from "./PagefilesError";
+import { ExtractedPagefileData } from "./types";
 
 function createEsbuildContents(root: string, contents: string): OnLoadResult {
   return {
@@ -56,6 +52,23 @@ function createEsbuildPlugin(contents: OnLoadResult, allowlist: string[]) {
 }
 
 /**
+ * Attempts to extract the path to some file that caused a build failure based
+ * on the text of the first error message.
+ */
+function extractFilePathFromFirstBuildFailure(failure: esbuild.BuildFailure) {
+  const firstError = failure.errors[0];
+  return firstError.text.match(
+    /No matching export in "([\w\W]*)" for import "Meta"/
+  )?.[1];
+}
+
+interface ExtractionWorkerData {
+  meta: object;
+  name?: string;
+  displayName?: string;
+}
+
+/**
  * Extracts metadata from a file at a given path. The metadata is used
  * throughout the rest of the plugin.
  *
@@ -83,12 +96,20 @@ function createEsbuildPlugin(contents: OnLoadResult, allowlist: string[]) {
 export async function extractPagefileData(
   root: string,
   paths: string[]
-): Promise<RawPagefileData[]> {
+): Promise<ExtractedPagefileData[]> {
   const pathImports = paths
-    .map((path, i) => `import { Meta as Meta${i} } from "${path}";`)
+    .map(
+      (path, i) =>
+        `import { default as Default${i}, Meta as Meta${i} } from "${path}";`
+    )
     .join("\n");
 
-  const pathMessages = paths.map((_, i) => `Meta${i}()`).join(",");
+  const pathMessages = paths
+    .map(
+      (_, i) =>
+        `{ meta: Meta${i}(), name: Default${i}.name, displayName: Default${i}.displayName }`
+    )
+    .join(",");
 
   const plugin = createEsbuildPlugin(
     createEsbuildContents(
@@ -110,30 +131,34 @@ parentPort.once('message', async () => {
     [...paths, "node:worker_threads", "node:process", "entrypoint.js"]
   );
 
-  const buildResult = await esbuild.build({
-    platform: "node",
-    format: "cjs",
-    outdir: ".",
-    write: false,
-    bundle: true,
-    logLevel: "silent",
-    metafile: true,
-    loader: {
-      ".png": "text",
-      ".svg": "text",
-    },
-    plugins: [plugin],
-    entryPoints: ["entrypoint.js"],
-  });
-
-  if (buildResult.errors.length > 0) {
-    throw new Error(`esbuild failed with errors`);
+  let buildResult: esbuild.BuildResult;
+  try {
+    buildResult = await esbuild.build({
+      platform: "node",
+      format: "cjs",
+      outdir: ".",
+      write: false,
+      bundle: true,
+      logLevel: "silent",
+      metafile: true,
+      loader: {
+        ".png": "text",
+        ".svg": "text",
+      },
+      plugins: [plugin],
+      entryPoints: ["entrypoint.js"],
+    });
+  } catch (failure) {
+    const castFailure = failure as esbuild.BuildFailure;
+    const matchingFile = extractFilePathFromFirstBuildFailure(castFailure);
+    throw new UnableToExtractMetaError(matchingFile);
   }
 
   const outputFile = buildResult.outputFiles?.[0];
 
   if (!isDefined(outputFile)) {
-    throw new Error(`esbuild built an empty result`);
+    // Not sure if this case is possible
+    throw new UnableToExtractMetaError();
   }
 
   const workerSrc = outputFile.text;
@@ -141,10 +166,15 @@ parentPort.once('message', async () => {
   return new Promise((resolve, reject) => {
     const worker = new Worker(workerSrc, { eval: true });
 
-    worker.once("message", (metas: unknown[]) => {
+    worker.once("message", (importExtractions: ExtractionWorkerData[]) => {
       resolve(
         // TODO: Validate shape of meta values at this point
-        metas.map((meta, i) => ({ meta: meta as any, filePath: paths[i] }))
+        importExtractions.map((extraction, i) => ({
+          meta: extraction.meta,
+          defaultExportName: extraction.name,
+          defaultExportDisplayName: extraction.displayName,
+          filePath: paths[i],
+        }))
       );
     });
 
