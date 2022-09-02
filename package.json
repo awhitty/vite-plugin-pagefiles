@@ -71,7 +71,6 @@
     "esbuild": "^0.14.42",
     "fast-glob": "^3.2.11",
     "picocolors": "^1.0.0",
-    "picomatch": "^2.3.1",
-    "realms-polyfill": "^0.7.3"
+    "picomatch": "^2.3.1"
   }
 }
