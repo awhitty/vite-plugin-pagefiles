@@ -45,7 +45,40 @@ function createEsbuildPlugin(contents: OnLoadResult, allowlist: string[]) {
       );
 
       build.onLoad({ filter: /.*/, namespace: "null" }, () => ({
-        contents: `module.exports = {}`,
+        contents: `
+function recursiveProxyMock() {
+  return recursiveProxyRecurse();
+}
+
+function recursiveProxyRecurse() {
+  const recursiveProxyInstance = function () { };
+  return new Proxy(recursiveProxyInstance, {
+    apply: () => recursiveProxyRecurse(),
+    construct: () => recursiveProxyRecurse(),
+    defineProperty: () => true,
+    deleteProperty: () => true,
+    get: (target, prop) =>
+      prop === Symbol.toPrimitive ? () => "" : recursiveProxyRecurse(),
+    getOwnPropertyDescriptor: (target, prop) =>
+      typeof prop === "string" && ["arguments", "caller", "prototype"].includes(prop) ? Reflect.getOwnPropertyDescriptor(target, prop) : {
+        configurable: true,
+        enumerable: true,
+        writable: true,
+        value: recursiveProxyRecurse(),
+      },
+    getPrototypeOf: () => recursiveProxyMock(),
+    has: () => true,
+    isExtensible: () => true,
+    ownKeys: () => ["arguments", "caller", "prototype"],
+    preventExtensions: () => false,
+    set: () => true,
+    setPrototypeOf: () => true,
+  });
+}
+
+module.exports = recursiveProxyMock();
+module.__esModule = true;
+          `.trim(),
       }));
     },
   };
