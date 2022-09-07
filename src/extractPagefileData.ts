@@ -149,8 +149,8 @@ export async function extractPagefileData(
       root,
       `
 
-import { parentPort } from 'node:worker_threads';
-import { exit } from 'node:process';
+import { parentPort } from 'worker_threads';
+import { exit } from 'process';
 
 ${pathImports}
 
@@ -161,7 +161,7 @@ parentPort.once('message', async () => {
 
       `.trim()
     ),
-    [...paths, "node:worker_threads", "node:process", "entrypoint.js"]
+    [...paths, "worker_threads", "process", "entrypoint.js"]
   );
 
   let buildResult: esbuild.BuildResult;
